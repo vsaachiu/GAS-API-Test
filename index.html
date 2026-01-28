@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>GAS API Framework</title>
+  <style>
+    body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding-top: 50px; background: #f4f4f9; }
+    .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; width: 300px; }
+    button { background: #4285f4; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; transition: background 0.2s; }
+    button:hover { background: #357ae8; }
+    button:disabled { background: #ccc; }
+    .message { margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; min-height: 20px; color: #333; font-weight: bold; }
+    .status { font-size: 12px; margin-top: 10px; color: #666; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>User Portal</h2>
+    <button id="refreshBtn">Refresh Message</button>
+    <div id="msgBox" class="message">Click the button to load...</div>
+    <div id="status" class="status">Status: Ready</div>
+  </div>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <script>
+    // CONFIGURATION
+    const CLIENT_ID = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
+    const SCRIPT_ID = 'YOUR_API_EXECUTABLE_DEPLOYMENT_ID';
+    const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email';
+
+    let tokenClient;
+    let accessToken = null;
+
+    const btn = document.getElementById('refreshBtn');
+    const msgBox = document.getElementById('msgBox');
+    const statusBox = document.getElementById('status');
+
+    // 2. Initialize the Identity Client
+    window.onload = () => {
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: (tokenResponse) => {
+          if (tokenResponse.access_token) {
+            accessToken = tokenResponse.access_token;
+            statusBox.innerText = "Status: Authenticated";
+            fetchMessage();
+          }
+        },
+      });
+    };
+
+    // 3. Handle Button Click
+    btn.onclick = () => {
+      if (!accessToken) {
+        // First time: Get token (triggers popup)
+        tokenClient.requestAccessToken();
+      } else {
+        // Subsequent times: Just call the API
+        fetchMessage();
+      }
+    };
+
+    // 4. The actual API call
+    async function fetchMessage() {
+      btn.disabled = true;
+      msgBox.innerText = "Loading...";
+      statusBox.innerText = "Status: Calling GAS API...";
+
+      const url = `https://script.googleapis.com/v1/scripts/${SCRIPT_ID}:run`;
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            function: 'loginMessage',
+            devMode: true // Useful during development
+          })
+        });
+
+        const result = await response.json();
+
+        if (result.error) {
+          throw new Error(result.error.message || "Unknown API Error");
+        }
+
+        // Handle the response from your 'loginMessage' function
+        const gasResult = result.response.result;
+        
+        if (gasResult.status === "success") {
+          msgBox.innerText = gasResult.message;
+          msgBox.style.color = "green";
+        } else {
+          msgBox.innerText = gasResult.message || "User not found.";
+          msgBox.style.color = "orange";
+        }
+
+      } catch (err) {
+        console.error(err);
+        msgBox.innerText = "Error: " + err.message;
+        msgBox.style.color = "red";
+        // If token expired, clear it so next click triggers login
+        accessToken = null; 
+      } finally {
+        btn.disabled = false;
+        statusBox.innerText = "Status: Idle";
+      }
+    }
+  </script>
+</body>
+</html>
